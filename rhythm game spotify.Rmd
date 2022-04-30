@@ -647,6 +647,3 @@ cor(phigros_tm$innotepersec, phigros_tm$tempo)
 ```{r}
 ggplot(data = phigros_tm, aes(x = tempo, y = innotepersec)) + geom_point(color = "orangered3") + geom_smooth(method = "lm", color = "lightblue3")
 ```
-
-***TODO: FIX ALL PLOT NAMES***
-
