@@ -1,0 +1,652 @@
+Clear workspace
+```{r}
+rm(list = ls())
+```
+
+Load in libraries
+```{r}
+library(stringr)
+library(readr)
+library(lubridate)
+library(dplyr)
+library(spotifyr)
+library(corrplot)
+library(rpart)
+library(ggplot2)
+library(plot.matrix)
+```
+
+Set up directory
+```{r}
+setwd("DIRECTORY")
+```
+
+Set up spotify authentication
+```{r}
+Sys.setenv(SPOTIFY_CLIENT_ID = 'CLIENT ID')
+Sys.setenv(SPOTIFY_CLIENT_SECRET = 'CLIENT SECRET')
+
+access_token <- get_spotify_access_token()
+```
+
+read csv of rhythm games
+```{r}
+games = read_csv("Rhythm Game Info.csv")
+```
+Read in the csv of the top songs:
+```{r}
+top_playlists = read_csv("Top Playlists.csv")
+```
+
+
+== Reading in all the playlists (DONE!!!!!) ==
+
+The plan is to get a csv for each game/playlist, then later read those all into dataframes to work with them
+
+I change the playlist IDs by hand and write each to a CSV
+  - The reason I do this and not a for loop is because Spotify has a 100 track
+    limit for getting audio features, and some of the games have over 100 songs.
+```{r}
+#playlist = get_playlist('playlist ID')
+```
+
+Get the tracks from the playlist
+```{r}
+#tracks <- playlist$tracks
+```
+
+get release date and popularity number for each of the tracks, make dataframe with that and the track id and the track name
+```{r}
+#trackinfo = as.data.frame(tracks$items$track.name)
+#trackinfo$release = ymd(tracks$items$track.album.release_date)
+#trackinfo$popularity = tracks$items$track.popularity
+#trackinfo$id = tracks$items$track.id
+```
+
+remove duplicates from trackinfo because that for some reason is necessary
+```{r}
+#trackinfo = distinct(trackinfo)
+```
+
+Note: not adding artist genre because a lot of the artists haven't been categorized
+by spotify into genres.. but that in itself is like.. a genre.. anyways it's
+computationally intensive to collect
+
+**Need to break this one up and join it back together for games with > 100 tracks**
+```{r}
+#features <- get_track_audio_features(trackinfo$id)
+```
+```{r}
+#features2 <- get_track_audio_features(trackinfo$id[101:200])
+```
+```{r}
+#features= rbind(features, features2)
+```
+
+also remove duplicates from features
+```{r}
+#features = distinct(features)
+```
+
+join trackinfo and features by track id, get one dataframe with all the songs
+```{r}
+#spotify = merge(trackinfo, features, by.x = "id", by.y = "id")
+#spotify = distinct(spotify)
+```
+
+Write that dataframe to the appropriate csv name
+```{r}
+#write_csv(spotify, "Top 100 Streamed.csv")
+```
+
+Note: In checking popularity of the top Top 100 Streamed songs, for some reason some of the top songs
+had popularities of 0 or 1. Obviously that's not right, so maybe don't use the popularity of
+those songs...
+
+== DONE READING IN PLAYLISTS!!!!! == 
+
+Next to do:
+- Read in all the csvs and save them in the dataframes.
+
+Read game songs into one massive dataframe with duplicates. don't need to run this again.
+- the plan is to use which(games_list$game = "desired game") to get littler dataframes
+```{r}
+songs_list = read_csv("ADOFAI.csv")
+songs_list$game = "ADOFAI"
+for (i in games$Game[2:15]) {
+  temp = read_csv(paste(i, ".csv", sep = ""))
+  temp$game = i
+  songs_list = rbind(songs_list, temp)
+}
+names(songs_list)[2] <- "name"
+```
+
+Read popular songs into one dataframe as well
+```{r}
+pop_songs_list = read_csv("Top 100 Streamed.csv")
+pop_songs_list$list = "Top 100 Streamed"
+temp = read_csv("Billboard 100.csv")
+temp$list = "Billboard 100"
+pop_songs_list = rbind(pop_songs_list, temp)
+names(pop_songs_list)[2] = "name"
+```
+
+Next to do (actual analysis):
+
+create another matrix with both the  popsongs and the game songs 
+```{r}
+temp = pop_songs_list
+names(temp)[22] = "game"
+songs_list_all = rbind(songs_list, temp)
+```
+
+create a summary matrix including both the game and the pop songs
+- metrics.. ya
+```{r}
+all_summ = data.frame(c(games$Game, top_playlists$Name))
+names(all_summ) = c("Source")
+for (i in 1:17) {
+  all_summ$avg_pop[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$popularity)
+  all_summ$avg_dance[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$danceability)
+  all_summ$avg_enrg[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$energy)
+  all_summ$avg_loud[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$loudness)
+  all_summ$avg_speech[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$speechiness)
+  all_summ$avg_acoust[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$acousticness)
+  all_summ$avg_inst[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$instrumentalness)
+  all_summ$avg_live[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$liveness)
+  all_summ$avg_val[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$valence)
+  all_summ$avg_temp[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$tempo)
+  
+  #proportion of songs in a major key (higher = generally "happier" bc major is "happier")
+  all_summ$prop_major[i] = mean((songs_list_all[which(songs_list_all$game == all_summ$Source[i]),])$mode)
+}
+```
+
+transpose them, convert to numeric
+```{r}
+all_summ_t = as.data.frame(t(all_summ))
+names(all_summ_t) = all_summ_t[1,]
+all_summ_t = all_summ_t[!row.names(all_summ_t) == "Source",]
+all_summ_t <- mutate_all(all_summ_t, function(x) as.numeric(as.character(x)))
+```
+
+normalize each row
+```{r}
+all_summ_num = t(all_summ_t)
+all_summ_t = t(apply(all_summ_t, 1, function(x)(x-min(x))/(max(x)-min(x))))
+```
+
+create correlation plot
+- some changes to make: correlate on other rows??
+if want to correlate on less things use
+test = test[ !(row.names(test) %in% c("OTP")), ] but test is the transposed dataframe name
+
+here is correlation without popularity
+```{r}
+corr_matrix = cor(all_summ_t[ !(row.names(all_summ_t) %in% c("avg_pop")), ])
+corrplot(corr_matrix, order = "hclust", col = colorRampPalette(c("blue4","dark blue","lightblue3","white", "lightsalmon1", "orangered3", "indianred4"))(200), tl.col = "gray47", tl.cex = 0.75, method = "circle")
+```
+
+- can also inform the future model to predict game by song attributes?
+     vvvvvvvvv
+visualization of the values for each category of each game, normalized
+```{r}
+temp = as.matrix(all_summ_t)
+row.names(temp) = c("Popularity", "Danceability", "Energy", "Loudness", "Speechiness", "Acousticness", "Instrumentalness", "Liveliness", "Valence", "Tempo", "Proportion Major")
+
+corrplot(as.matrix(temp), is.corr = F, col = colorRampPalette(c("blue4","dark blue","lightblue3", "lightsalmon1", "orangered3", "indianred4"))(200), tl.col = "gray47", tl.cex = 0.75)
+```
+
+make matrix with rankings of each song by metric (not used in final)
+```{r}
+all_summ_r = matrix(nrow = nrow(all_summ_num), ncol = ncol(all_summ_num))
+for (i in 1:ncol(all_summ_num)) {
+  for (k in 1:nrow(all_summ_num)) {
+    all_summ_r[k,i] = match(k, order(all_summ_num[,i]))
+  }
+}
+row.names(all_summ_r) = row.names(all_summ_num)
+colnames(all_summ_r) = colnames(all_summ_num)
+all_summ_r = t(all_summ_r)
+```
+
+plots the rankings relative to each other, so not the actual values. darker means higher ranked
+```{r}
+all_summ_r2 = t(apply(all_summ_r, 1, function(x)(x/17)))
+corrplot(all_summ_r2, is.corr = F, col = colorRampPalette(c("blue4","dark blue","lightblue3", "lightsalmon1", "orangered3", "indianred4"))(200), method = "circle")
+```
+==== Above is Done  ====
+
+only include songs that appear in ONE game
+```{r}
+songs_list_onegame = songs_list[!(duplicated(songs_list$id) | duplicated(songs_list$id, fromLast = TRUE)), ]
+```
+
+edit up the dataframe, delete some extraneous variables
+```{r}
+songs_list_onegame$type = NULL
+songs_list_onegame$uri = NULL
+songs_list_onegame$track_href = NULL
+songs_list_onegame$analysis_url = NULL
+```
+
+Set seed for random processes
+```{r}
+set.seed(100)
+```
+
+split into test and train
+```{r}
+test_indices = sample.int(1268, 380)
+```
+
+```{r}
+songs_onegame_test = songs_list_onegame[test_indices,]
+songs_onegame_train = songs_list_onegame[-test_indices,]
+```
+
+train up a model that predicts popularity
+```{r}
+pop_model_one = lm(popularity ~ . , data = songs_onegame_train[,!colnames(songs_onegame_train) %in% c("id", "name", "release")])
+```
+
+try it out on the test data
+```{r}
+songs_onegame_test$predicted = predict(pop_model_one, newdata = songs_onegame_test, type = "response")
+```
+
+see correlation
+```{r}
+cor(songs_onegame_test$predicted, songs_onegame_test$popularity)
+```
+
+Look at the model
+```{r}
+summary(pop_model_one)
+```
+Looks like the games significantly affect popularity predictions! 
+- plot bar chart of games' popularities and show them that
+```{r}
+ggplot(data = all_summ[-c(16,17),]) + geom_col(aes(x = reorder(Source, -avg_pop), y = avg_pop, fill = reorder(Source, -avg_pop))) + scale_x_discrete(guide = guide_axis(angle = 90)) + scale_fill_manual(values = colorRampPalette(c("blue4","dark blue","lightblue3","white", "lightsalmon1", "orangered3", "indianred4"))(17)) + guides(fill="none") + xlab("Game") + ylab("Average Popularity")
+```
+
+Try another one on just aspects of the song (without game)
+```{r}
+pop_model_two = lm(popularity ~ . , data = songs_onegame_train[,!colnames(songs_onegame_train) %in% c("id", "name", "release", "game")])
+```
+
+```{r}
+songs_onegame_test$predictedtwo = predict(pop_model_two, newdata = songs_onegame_test, type = "response")
+```
+
+That one is much much worse. So it turns out the game is important!
+```{r}
+cor(songs_onegame_test$popularity, songs_onegame_test$predictedtwo)
+summary(pop_model_two)
+```
+
+Instrumentalness looks like it's the most important one, so let's look at a scatterplot
+- yeah, there's a marked decrease in popularity for how instrumental a song is
+```{r}
+ggplot(data = songs_list_onegame, aes(x = instrumentalness, y = popularity, color = game)) + geom_point() + geom_smooth(method = "lm", color = "gray20") + xlab("Instrumentalness") + ylab("Popularity") + labs(color = "Game") + ggtitle("Popularity by Instrumentalness")
+ggplot(data = songs_list_onegame, aes(x = danceability, y = popularity, color = game)) + geom_point() + geom_smooth(method = "lm", color = "gray20") + xlab("Danceability") + ylab("Popularity") + labs(color = "Game") + ggtitle("Popularity by Danceability")
+ggplot(data = songs_list_onegame, aes(x = energy, y = popularity, color = game)) + geom_point() + geom_smooth(method = "lm", color = "gray20") + xlab("Energy") + ylab("Popularity") + labs(color = "Game") + ggtitle("Popularity by Energy")
+```
+
+Try another one on games and everything else except for instrumentalness (since that was shown to be important on the other one)
+```{r}
+pop_model_three = lm(popularity ~ . , data = songs_onegame_train[,!colnames(songs_onegame_train) %in% c("id", "name", "release", "instrumentalness")])
+```
+
+```{r}
+songs_onegame_test$predictedthree = predict(pop_model_three, newdata = songs_onegame_test, type = "response")
+```
+
+The correlation is slightly lower but still very high if you take away instrumentalness. Now valence is important, and also kind of duration.
+```{r}
+cor(songs_onegame_test$popularity, songs_onegame_test$predictedthree)
+summary(pop_model_three)
+```
+
+All songs joined:
+- add in a new column that denotes what dataframe they came from (this can be done by making a new
+dataframe with the same info but one other column thats just all the dataframe name over and over again - can be even done on the og dataframe then deleted) - DONE
+  - with this one, only include songs that appear in ONE game.
+- predict popularity on different measures including the game as.factor
+  - also join this with the additional game info (see below) and predict popularity of the song based on that stuff as well.
+
+joining with additional game info
+```{r}
+songs_onegame_train_plus = merge(songs_onegame_train, games, by.x = "game", by.y = "Game")
+songs_onegame_test_plus = merge(songs_onegame_train, games, by.x = "game", by.y = "Game")
+```
+
+make new model without game but with the new info (related to the games)
+```{r}
+pop_model_gameinfo = lm(popularity ~ . , data = songs_onegame_train_plus[,!colnames(songs_onegame_train_plus) %in% c("id", "name", "release", "game", "PlaylistID")])
+```
+
+test new model
+```{r}
+songs_onegame_test_plus$predictedgameinfo = predict(pop_model_gameinfo, newdata = songs_onegame_test_plus, type = "response")
+```
+
+it's not super bad, but the first one was still the best predictor
+interestingly, rayark isn't even that big of an indicator and even has some positive correlation although I thought it would have a negative correlation since they're so insane with their microtransactions...
+microtransactions are shown to have a significant negative correlation with popularity however, so?? i guess rayark is just good enough to make up for their insane microtransactions, or there's enough of a cult following of their games that its fine?
+the vr result is kinda meaningless lol that's just beatsaber doing their thing
+```{r}
+cor(songs_onegame_test_plus$popularity, songs_onegame_test_plus$predictedgameinfo)
+summary(pop_model_gameinfo)
+```
+  
+
+--- predict which game a song belongs to based on its attributes... (not popularity) ---
+
+```{r}
+game_classifier = rpart(game ~ ., data = songs_onegame_train[sample(1:nrow(songs_onegame_train)), 
+    !colnames(songs_onegame_train) %in% c("id", "name", 
+        "release", "popularity")], method = "class")
+```
+
+try to run the game classifier on the test data
+  - maybe take a look at the error by the correlation of the given one to the predicted one (see above for correlation plot??)
+```{r}
+songs_onegame_test$predictgame = predict(game_classifier, newdata = songs_onegame_test, type = "class")
+```
+
+look at accuracy actually its not super bad??
+```{r}
+mean(songs_onegame_test$predictgame == songs_onegame_test$game)
+```
+
+get baseline for predicted songs (random guessing) - ok so comparatively it's not bad!
+- the probability of getting any one variable right is 1/15 (0.0667) (if the actual values are evenly distributed, but they're not here, but it's close to the value anyways)
+```{r}
+baseline_predictgame = sample(games$Game, 380, replace = TRUE)
+mean(songs_onegame_test$predictgame == baseline_predictgame)
+```
+
+ok now run the classifier on the popular songs
+
+get dataframes of popular songs
+```{r}
+top100ever = songs_list_all[which(songs_list_all$game == "Top 100 Streamed"),]
+billboard100 = songs_list_all[which(songs_list_all$game == "Billboard 100"),]
+```
+
+get predictions for each song
+```{r}
+top100ever$game = predict(game_classifier, newdata = top100ever, type = "class")
+billboard100$game = predict(game_classifier, newdata = billboard100, type = "class")
+```
+
+take a look at the predictions - i could make a bar graph out of this!
+- to get more interesting results, perhaps make and run another classifier without beat saber, deemo, and cytus ii?
+```{r}
+top100ever[,c(2,22)]
+```
+```{r}
+billboard100[,c(2,22)]
+```
+plotting the classified songs
+```{r}
+forplot_classified_pop = rbind(top100ever[,c(2,22)],billboard100[,c(2,22)])
+forplot_classified_pop_counts = as.data.frame(summary(forplot_classified_pop$game))
+names(forplot_classified_pop_counts) = c("count")
+forplot_classified_pop_counts$count = as.numeric(forplot_classified_pop_counts$count)
+forplot_classified_pop_counts$name = row.names(forplot_classified_pop_counts)
+row.names(forplot_classified_pop_counts) = NULL
+```
+
+```{r}
+ggplot(data = forplot_classified_pop_counts[1:7,]) + 
+  geom_col(aes(x = reorder(name, -count), y = count, fill = reorder(name, -count))) + 
+  scale_x_discrete(guide = guide_axis(angle = 90)) + 
+  scale_fill_manual(values = colorRampPalette(c("blue4","dark blue","lightblue3","white", "lightsalmon1", "orangered3", "indianred4"))(7)) + 
+  guides(fill="none") + xlab("Predicted Game") + ylab("Number of Songs") + ggtitle("Number of Songs Predicted to Belong to Each Game")
+```
+-- make another classifier without the top classes --
+**eh this isn't really interesting, don't include it**
+
+make matrix to train on without the top classes
+```{r}
+songs_list_nobs = songs_list[-which(songs_list$game %in% c("Beat Saber")),]
+```
+
+split into test and train
+```{r}
+test_indices = sample.int(1424, 427)
+songs_list_nobs_test = songs_list_nobs[test_indices,]
+songs_list_nobs_train = songs_list_nobs[-test_indices,]
+```
+
+build model on train (don't run this again after it's done)
+```{r}
+game_classifier_nobs = rpart(game ~ ., data = songs_list_nobs_train[, 
+    !colnames(songs_list_nobs_train) %in% c("id", "name", 
+        "release", "popularity", "type", "uri", "track_href", "analysis_url")], method = "class")
+```
+
+test model on test
+```{r}
+songs_list_nobs_test$predictedgame = predict(game_classifier_nobs, newdata = songs_list_nobs_test, type = "class")
+```
+
+```{r}
+mean(songs_list_nobs_test$predictedgame == songs_list_nobs_test$game)
+```
+
+use the model without beatsaber to predict the top songs
+```{r}
+top100ever$game_nobs = predict(game_classifier_nobs, newdata = top100ever, type = "class")
+billboard100$game_nobs = predict(game_classifier_nobs, newdata = billboard100, type = "class")
+```
+
+```{r}
+top100ever[,c(2,23)]
+```
+```{r}
+billboard100[,c(2,23)]
+```
+plotting the classified songs
+```{r}
+forplot_classified_pop_nobs = rbind(top100ever[,c(2,23)],billboard100[,c(2,23)])
+forplot_classified_pop_counts_nobs = as.data.frame(summary(forplot_classified_pop_nobs$game_nobs))
+names(forplot_classified_pop_counts_nobs) = c("count")
+forplot_classified_pop_counts_nobs$count = as.numeric(forplot_classified_pop_counts_nobs$count)
+forplot_classified_pop_counts_nobs$name = row.names(forplot_classified_pop_counts_nobs)
+row.names(forplot_classified_pop_counts_nobs) = NULL
+```
+
+```{r}
+ggplot(data = forplot_classified_pop_counts_nobs) + 
+  geom_col(aes(x = reorder(name, -count), y = count, fill = reorder(name, -count))) + 
+  scale_x_discrete(guide = guide_axis(angle = 90)) + 
+  scale_fill_manual(values = colorRampPalette(c("blue4","dark blue","lightblue3","white", "lightsalmon1", "orangered3", "indianred4"))(15)) + 
+  guides(fill="none")
+```
+
+--- Songs by number of games in it ---
+  - of course this isn't comprehensive since there are other rhythm games out there that might increase a song's game count beyond what's being looked at here. but i do think the 15 here can still give good data.
+- join all songs but for songs in multiple games make a new variable that says how many games a song is in
+  - make a new deduped dataframe, then add in the new variable.
+  - this might be kinda hard to do but we can see if theres a built in function
+  - then check to see if the number of games a song is in is positively correlated with its popularity on spotify
+
+get the dataframe with gamecount
+```{r}
+songs_list_numgames = songs_list
+songs_list_numgames$game = NULL
+songs_list_numgames = distinct(songs_list_numgames)
+temp = count(songs_list, id)
+names(temp) = c("id", "gamecount")
+songs_list_numgames = merge(songs_list_numgames, temp)
+```
+
+what songs are in the most games?
+```{r}
+songs_list_numgames[order(songs_list_numgames$gamecount, decreasing = T),c(2,22)]
+```
+histogram based on songcounts
+```{r}
+ggplot(data = songs_list_numgames, aes(x = gamecount, fill = gamecount)) +  geom_histogram(fill = colorRampPalette(c("blue4","dark blue","lightblue3","white", "lightsalmon1", "orangered3", "indianred4"))(4), bins = 4) + xlab("Number of Games") + ylab("Number of Songs") + ggtitle("Number of songs by number of games")
+```
+
+calculate correlation between popularity and gamecount and it is very very small. that's probably because the gamecount is 1 or 2 for the vast majority of songs (all but <20)
+```{r}
+cor(songs_list_numgames$popularity, songs_list_numgames$gamecount)
+```
+
+get a random vector for splitting (don't change this afterwards)
+```{r}
+test_indices_numgames = sample.int(1407, 422)
+```
+
+split into test and train
+```{r}
+songs_numgames_test = songs_list_numgames[test_indices_numgames,]
+songs_numgames_train = songs_list_numgames[-test_indices_numgames,]
+```
+
+try to train a linear model on that
+```{r}
+pop_model_numgames = lm(popularity ~ . - gamecount + as.factor(gamecount) , data = songs_numgames_train[,!colnames(songs_numgames_train) %in% c("id", "name", "release", "type", "uri", "track_href", "analysis_url")])
+```
+
+test new model
+```{r}
+songs_numgames_test$predicted = predict(pop_model_numgames, newdata = songs_numgames_test, type = "response")
+```
+
+see result
+hmm. not super helpful still, but being in 3 games does increase popularity (is a significant result)
+- being in multiple generally has positive effect overall, but 2 and 4 are not significant results
+```{r}
+cor(songs_numgames_test$popularity, songs_numgames_test$predicted)
+summary(pop_model_numgames)
+```
+
+find avg pop by if in  multiple games or not
+make variable for if in multiple
+```{r}
+songs_list_numgames$multiple = songs_list_numgames$gamecount > 1
+```
+
+get average popularity for multiple or not
+```{r}
+avg_pop_multgames = songs_list_numgames %>% group_by(multiple) %>% summarise(avg= mean(popularity))
+```
+
+graph avg pop by if multiple
+```{r}
+ggplot(data = avg_pop_multgames) + geom_col(aes(x = multiple, y = avg, fill = c("sky blue", "purple"))) + guides(fill="none") + xlab("Belongs to multiple games?") + ylab("Average Popularity") + ggtitle("Average Popularity by Belonging to Multiple Games")
+```
+
+See scatterplot for gamecount (do not include in final product)
+```{r}
+ggplot(data = songs_list_numgames, aes(x = gamecount, y = popularity)) + geom_point(color = "orangered3") + geom_smooth(method = "lm", color = "lightblue3")
+```
+
+
+--- Deep dive into Phigros songs: ---
+- see correlation between spotify metrics and song difficulty metrics
+  - is difficulty rating or note count more correlated with tempo? popularity? duration?
+      - make one of those rectangle correlation matrices (between 2 different dataframes but have to make sure that the stuff appears in the same order in both frames)
+  - duration isnt reliable for spotify songs bc some are long version. but i do have in game duration data
+  - try to look at difficulty metrics and song duration comparison?
+  - find the correlation between easy and hard levels
+  - find the correlation between note count and stuff?
+  - notes per second
+
+read in  phigros songs and modified phigros spotify
+```{r}
+phigros_gd = read_csv("Phigros Game Data.csv")
+phigros_tm = read_csv("Phigros To Merge.csv")
+```
+analysis on phigros alone
+create notes per second
+```{r}
+phigros_gd$innotepersec = phigros_gd$incount / phigros_gd$duration
+```
+
+split into test and train (70-30)
+```{r}
+phigros_gd_train = phigros_gd[1:(0.7*nrow(phigros_gd)),]
+phigros_gd_test = phigros_gd[-(1:(0.7*nrow(phigros_gd))),]
+```
+
+predict insane level (because that's the one that matters most) based on note count, note per second, duration
+
+with a linear model
+```{r}
+phigros_inlevelmodel_one = lm(inlevel ~ incount + duration + innotepersec, data = phigros_gd_train)
+```
+test it out on test data
+```{r}
+phigros_gd_test$predictinlevelone = predict(phigros_inlevelmodel_one, newdata = phigros_gd_test, type = "response")
+```
+look at summary - pretty good!
+```{r}
+cor(phigros_gd_test$inlevel, phigros_gd_test$predictinlevelone)
+summary(phigros_inlevelmodel_one)
+```
+from above: for every unit increase in difficulty, 2.9 note per second increase.
+
+scatterplot assigned inlevel vs note count or note per second, just to see
+  - durations are pretty evenly distributed so this plot looks real similar to total notes
+```{r}
+ggplot(data = phigros_gd, aes(x = innotepersec, y = inlevel)) + geom_point() + geom_smooth(method = "lm", color = "lightblue3") + xlab("Notes per Second") + ylab("Difficulty Rating") + ggtitle("Difficulty by Note Speed")
+```
+^^ the scatterplot: the outlier down there is dB doll, famous for having the easiest charts in game
+
+merge 
+```{r}
+phigros_tm = merge(phigros_gd, phigros_tm, by.x = "name", by.y = "tracks$items$track.name")
+```
+
+analysis on phigros game data and spotify combined - game difficulty vs song metrics
+- difficulty vs popularity
+  - a moderate positive relationship
+```{r}
+cor(phigros_tm$inlevel, phigros_tm$popularity)
+```
+```{r}
+ggplot(data = phigros_tm, aes(x = inlevel, y = popularity, color = innotepersec)) + geom_point() + geom_smooth(method = "lm", color = "gray20") + labs(color = "Note Speed") + xlab("Difficulty Rating") + ylab("Popularity") + ggtitle("Popularity by Difficulty")
+```
+popularity vs notes per sec
+```{r}
+cor(phigros_tm$innotepersec, phigros_tm$popularity)
+ggplot(data = phigros_tm, aes(x = innotepersec, y = popularity, color = inlevel)) + geom_point() + geom_smooth(method = "lm", color = "gray20", se = F) + xlab("Popularity") + ylab("Notes per Second") + labs(color = "Difficulty") + 
+```
+
+
+
+- difficulty vs tempo
+  - turns out the tempo of the song has little to do with its difficulty
+```{r}
+cor(phigros_tm$inlevel, phigros_tm$tempo)
+```
+```{r}
+ggplot(data = phigros_tm, aes(x = tempo, y = inlevel)) + geom_point(color = "orangered3") + geom_smooth(method = "lm", color = "lightblue3")
+```
+- total notes vs tempo
+  - almost perfectly unrelated
+```{r}
+cor(phigros_tm$incount, phigros_tm$tempo)
+```
+```{r}
+ggplot(data = phigros_tm, aes(x = tempo, y = incount)) + geom_point(color = "orangered3") + geom_smooth(method = "lm", color = "lightblue3")
+```
+
+- notes per second vs tempo
+  - actually has almost nothing to do with it
+```{r}
+cor(phigros_tm$innotepersec, phigros_tm$tempo)
+```
+```{r}
+ggplot(data = phigros_tm, aes(x = tempo, y = innotepersec)) + geom_point(color = "orangered3") + geom_smooth(method = "lm", color = "lightblue3")
+```
+
+***TODO: FIX ALL PLOT NAMES***
+
